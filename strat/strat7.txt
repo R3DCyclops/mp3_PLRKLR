@@ -1,0 +1,2 @@
+Стратегия 7 (Необходим VPN или Zapret)
+hitmo.py+lmusic.py+soundcloud.py+ytm.py
