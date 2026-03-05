@@ -1,5 +1,7 @@
 # mp3_PLRKLR
 
+**Для автоматического импорта нужной версии ffpeg в проект запустите ffmpeg_importer.py
+
 > Desktop-приложение для поиска и скачивания музыки из различных источников
 
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
