@@ -1,0 +1,2 @@
+Стратегия 3 (Необходим VPN или Zapret)
+soundcloud.py+hitmo.py
