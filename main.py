@@ -287,39 +287,25 @@ class TrackListParser:
 class YandexMusicExporter:
     @staticmethod
     def export_playlist(owner, kinds):
-        try:
-            uri = f"https://music.yandex.ru/handlers/playlist.jsx?owner={owner}&kinds={kinds}"
-            response = requests.get(uri, timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            playlist_title = data['playlist']['title']
-            tracks = data['playlist']['tracks']
-            
-            all_file = ""
-            for track in tracks:
-                artists_names = ", ".join(artist['name'] for artist in track['artists'])
-                all_file += f"{artists_names} - {track['title']}\n"
-            
-            safe_title = re.sub(r'[^\w\s-]', '', playlist_title).strip()
-            if not safe_title:
-                safe_title = f"playlist_{kinds}"
-            
-            return safe_title, all_file
-        except Exception as e:
-            raise Exception(f"Ошибка экспорта: {str(e)}")
+        return f"playlist_{kinds}", ""
 
     @staticmethod
     def parse_iframe(iframe_html):
-        iframe_match = re.search(r'src="https://music\.yandex\.[^/]+/iframe/playlist/([^/]+)/([^"]+)"', iframe_html)
-        if iframe_match:
-            return iframe_match.group(1), iframe_match.group(2)
+        #ищем UUID в тегах <a href="...playlists/UUID...">
+        uuid_match = re.search(r'playlists/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', iframe_html, re.IGNORECASE)
+        if uuid_match:
+            uuid = uuid_match.group(1)
+            print(f"[DEBUG PARSE_IFRAME] Найден UUID плейлиста: {uuid}")
+            return "uuid", uuid
         
-        old_format = re.match(r'https://music\.yandex\.[^/]+/users/([^/]+)/playlists/(\d+)', iframe_html)
-        if old_format:
-            return old_format.group(1), old_format.group(2)
-        
+        #если формат другой ищем любой UUID в тексте
+        any_uuid = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', iframe_html, re.IGNORECASE)
+        if any_uuid:
+            print(f"[DEBUG PARSE_IFRAME] Найден резервный UUID: {any_uuid.group(1)}")
+            return "uuid", any_uuid.group(1)
+            
         return None, None
+
 
 class SoundCloudSearcher:
     def __init__(self, ffmpeg_path, debug_mode=False):
@@ -1420,19 +1406,102 @@ class App:
         close_btn.pack(pady=(0, 20))
 
     def export_yandex_playlist(self, iframe_html):
-        owner, kinds = YandexMusicExporter.parse_iframe(iframe_html)
-        if not owner or not kinds:
-            raise Exception("Не удалось распознать iframe. Убедитесь, что вы вставили корректный HTML код плейлиста.")
+        #Парсим iframe, достаем owner, kind, UUID
+        src_match = re.search(r'src=["\'](?:https?://music\.yandex\.ru)?/iframe/playlist/([^/]+)/(\d+)["\']', iframe_html, re.IGNORECASE)
         
-        playlist_name, playlist_content = YandexMusicExporter.export_playlist(owner, kinds)
+        uuid_match = re.search(r'playlists/(?:lk\.)?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', iframe_html, re.IGNORECASE)
+        
+        if not uuid_match:
+            raise Exception("UUID плейлиста не найден в iframe")
+            
+        clean_uuid = uuid_match.group(1)
+        owner = src_match.group(1) if src_match else None
+        kind = src_match.group(2) if src_match else None
+        
+        self.log(f"[DEBUG] UUID: {clean_uuid}, Owner: {owner}, Kind: {kind}")
+        
+        is_personal = kind in ['3', '1001', '1002', '1003', '1004']
+        
+        if is_personal and owner:
+            api_url = f"https://api.music.yandex.net/users/{owner}/playlists/{kind}"
+            self.log(f"[INFO] Запрос к API (личный плейлист): {api_url}")
+        else:
+            api_url = f"https://api.music.yandex.net/playlist/{clean_uuid}"
+            self.log(f"[INFO] Запрос к API (публичный плейлист): {api_url}")
+        
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+                'Origin': 'https://music.yandex.ru',
+                'Referer': 'https://music.yandex.ru/'
+            }
+            resp = requests.get(api_url, headers=headers, timeout=25)
+            
+            if resp.status_code in [401, 403, 404] and is_personal:
+                raise Exception(f"Плейлист '{kind}' является приватным. API Яндекса требует авторизации для доступа к 'Мне нравится'. Используйте обычный плейлист или экспортируйте треки вручную.")
+            
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.HTTPError as e:
+            raise Exception(f"Ошибка API ({resp.status_code}): {e}")
+        except Exception as e:
+            raise Exception(f"Ошибка сети/API: {e}")
+        
+        try:
+            result = data.get('result', {})
+            playlist_name = result.get('title', f"Playlist {clean_uuid[:8]}")
+            raw_tracks = result.get('tracks', [])
+            
+            if not raw_tracks:
+                volumes = result.get('volumes', [])
+                if volumes and isinstance(volumes, list):
+                    raw_tracks = [t for vol in volumes if isinstance(vol, list) for t in vol]
+            
+            self.log(f"[OK] Плейлист: '{playlist_name}', треков: {len(raw_tracks)}")
+            
+            if not raw_tracks:
+                raise Exception("API вернул пустой список треков")
+                
+        except Exception as e:
+            raise Exception(f"Ошибка парсинга JSON: {e}")
+        
+        playlist_content = ""
+        parsed_count = 0
+        
+        for item in raw_tracks:
+            try:
+                track = item.get('track', item) if isinstance(item, dict) else item
+                if not isinstance(track, dict):
+                    continue
+                
+                title = track.get('title', 'Unknown Track')
+                if track.get('version'):
+                    title = f"{title} ({track['version']})"
+                
+                artists = track.get('artists', [])
+                artists_names = ", ".join(a['name'] for a in artists if isinstance(a, dict) and 'name' in a)
+                
+                playlist_content += f"{artists_names or 'Unknown Artist'} - {title}\n"
+                parsed_count += 1
+            except Exception:
+                continue
+        
+        if parsed_count == 0:
+            raise Exception("Не удалось распарсить ни одного трека")
+        
+        self.log(f"[OK] Распарсено: {parsed_count} треков")
         
         self.temp_dir = os.path.join(self.app_dir, "temp")
         os.makedirs(self.temp_dir, exist_ok=True)
         
-        self.temp_playlist_file = os.path.join(self.temp_dir, f"{playlist_name}.txt")
+        safe_title = re.sub(r'[^\w\s-]', '', playlist_name).strip() or f"pl_{clean_uuid[:8]}"
+        self.temp_playlist_file = os.path.join(self.temp_dir, f"{safe_title}.txt")
+        
         with open(self.temp_playlist_file, 'w', encoding='utf-8') as f:
             f.write(playlist_content)
-        
+            
+        self.log(f"[OK] Файл создан: {os.path.basename(self.temp_playlist_file)}")
         return self.temp_playlist_file
 
     def cleanup_temp(self):
