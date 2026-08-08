@@ -3,13 +3,14 @@
 **Для автоматического импорта нужной версии ffpeg в проект запустите ffmpeg_importer.py**
 
 > Desktop-приложение для поиска и скачивания музыки из различных источников
+>> Помогает убрать цензуру в треках Ваших плейлистов.
 
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
 **mp3_PLRKLR** — это свободное приложение с графическим интерфейсом для массового скачивания музыкальных треков. На основе Ваших плейлистов из Яндекс Музыки.
-** Помогает убрать цензуру в треках Ваших плейлистов.
+
 
 ### Особенности
 
@@ -66,20 +67,20 @@ compile.bat
 
 ## Структура проекта
 
-mp3_PLRKLR/
-├── main.py              # Точка входа, основной класс App
-├── config.json          # Конфигурация
-├── compile.bat          # Скрипт сборки PyInstaller
-├── requirements.txt     # Зависимости Python
-├── strat/               # Стратегии поиска
-│   ├── strat*.txt       # Файлы стратегий
-│   └── methods/         # Модули источников
-│       ├── hitmo.py     # Hitmotop API
-│       ├── soundcloud.py# SoundCloud через yt-dlp
-│       └── ytm.py       # YouTube Music через yt-dlp
-├── ffmpeg/              # Встроенный FFmpeg (опционально)
-├── dist/                # Выходная папка после сборки
-└── *.png, *.ico         # Ресурсы интерфейса
+    mp3_PLRKLR/
+    ├── main.py              # Точка входа, основной класс App
+    ├── config.json          # Конфигурация
+    ├── compile.bat          # Скрипт сборки PyInstaller
+    ├── requirements.txt     # Зависимости Python
+    ├── strat/               # Стратегии поиска
+    │   ├── strat*.txt       # Файлы стратегий
+    │   └── methods/         # Модули источников
+    │       ├── hitmo.py     # Hitmotop API
+    │       ├── soundcloud.py# SoundCloud через yt-dlp
+    │       └── ytm.py       # YouTube Music через yt-dlp
+    ├── ffmpeg/              # Встроенный FFmpeg (опционально)
+    ├── dist/                # Выходная папка после сборки
+    └── *.png, *.ico         # Ресурсы интерфейса
 
 ## Лицензия
 
